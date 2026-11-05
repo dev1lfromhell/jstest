@@ -3,7 +3,7 @@
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"
-        android:label="Glass Blocks Preview"
+        android:label="Glass Cascade"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
