@@ -21,6 +21,7 @@ window.reportReady = function(){
  window.sdkReadySent=true;
  window.ysdk.features?.LoadingAPI?.ready();
  window.ysdk.features?.GameplayAPI?.start();
+ window.dispatchEvent(new Event('blockforge-sdk-ready'));
 };
 async function startSdk(){
  try{window.ysdk=await YaGames.init();window.reportReady();}
@@ -511,11 +512,11 @@ function frame(t){
 }
 try{best=Number(localStorage.getItem(storageKey)||0)||0;}catch{best=0;}
 newGame();resize();requestAnimationFrame(frame);
+ window.addEventListener('blockforge-sdk-ready',()=>{
+   window.ysdk.on('game_api_pause',()=>{gamePaused=true;if(audioCtx)audioCtx.suspend().catch(()=>{});});
+   window.ysdk.on('game_api_resume',()=>{gamePaused=false;});
+ });
  window.gameMounted=true;window.reportReady();
- if(window.ysdk){
-  window.ysdk.on('game_api_pause',()=>{gamePaused=true;if(audioCtx)audioCtx.suspend().catch(()=>{});});
-  window.ysdk.on('game_api_resume',()=>{gamePaused=false;});
- }
 })();
 </script>
 </body>
