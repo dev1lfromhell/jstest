@@ -1,0 +1,29 @@
+name: Package Yandex Games candidate
+
+on:
+  push:
+    paths:
+      - "yandex-candidate/**"
+      - ".github/workflows/package-yandex-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pack-html5:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build root-index HTML5 archive
+        run: |
+          cd yandex-candidate
+          zip -9 ../glass-blocks-yandex-candidate.zip index.html
+          cd ..
+          unzip -t glass-blocks-yandex-candidate.zip
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: glass-blocks-yandex-candidate
+          path: glass-blocks-yandex-candidate.zip
+          retention-days: 14
