@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
-<title>Block Forge — Touch Test v0.9</title>
+<title>Block Forge — Glass Edition v1.0</title>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -101,12 +101,21 @@ function updateDrag(p){
  if(closest<=SNAP_RADIUS)snap=candidate;
 }
 function spawnShards(cx,cy,hex){
- for(let i=0;i<5;i++){
-  const a=2*Math.PI*(i+rand(-.2,.2))/5, speed=rand(85,195), life=rand(.38,.68);
-  particles.push({x:cx+Math.cos(a)*9,y:cy+Math.sin(a)*9,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed-65,rotation:rand(-Math.PI,Math.PI),spin:rand(-8,8),age:0,life,size:rand(6,13),hex});
+  for(let i=0;i<8;i++){
+   const a=2*Math.PI*(i+rand(-.3,.3))/8, speed=rand(105,260), life=rand(.52,.94);
+   particles.push({x:cx+Math.cos(a)*rand(2,14),y:cy+Math.sin(a)*rand(2,14),
+    vx:Math.cos(a)*speed,vy:Math.sin(a)*speed-90,
+    rotation:rand(-Math.PI,Math.PI),spin:rand(-11,11),
+    age:0,life,size:rand(5,13),hex,type:i%3===0?'sliver':'triangle'});
+  }
+  for(let i=0;i<5;i++){
+   const a=rand(0,Math.PI*2),speed=rand(80,220);
+   particles.push({x:cx,y:cy,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed-50,
+    age:0,life:rand(.23,.5),size:rand(1.3,3.1),type:'spark',hex});
+  }
+  if(particles.length>1000)particles.splice(0,particles.length-1000);
  }
-}
-function place([x,y]){
+ function place([x,y]){
  if(selected<0||pieces[selected]<0||over)return;
  const shape=SHAPES[pieces[selected]];
  if(!canPlace(shape,x,y))return;
@@ -119,7 +128,7 @@ function place([x,y]){
  const cleared=new Set();for(const yy of rows)for(let xx=0;xx<N;xx++)cleared.add(`${xx},${yy}`);
  for(const xx of cols)for(let yy=0;yy<N;yy++)cleared.add(`${xx},${yy}`);
  for(const key of cleared){const [xx,yy]=key.split(',').map(Number),hex=COLORS[board[yy][xx]],cx=OX+(xx+.5)*C,cy=OY+(yy+.5)*C;spawnShards(cx,cy,hex);waves.push({x:cx,y:cy,age:0,life:.42,hex});board[yy][xx]=-1;}
- const lines=rows.length+cols.length;score+=lines*lines*10;if(lines)flash=.28;
+ const lines=rows.length+cols.length;score+=lines*lines*10;if(lines)flash=.34;
  selected=-1;dragging=false;snap=null;ghostReady=false;
  if(pieces.every(p=>p<0))refill();
  if(score>best){best=score;try{localStorage.setItem(storageKey,String(best));}catch{}}
@@ -148,24 +157,44 @@ canvas.addEventListener('pointerup',e=>{
 canvas.addEventListener('pointercancel',e=>{if(e.pointerId!==pointerId)return;pointerId=null;dragging=false;selected=-1;snap=null;ghostReady=false;},{passive:true});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 function tile(x,y,w,h,hex,a=1){
- const edge=Math.max(2,w*.09), corner=Math.max(2,Math.round(w*.1));
- ctx.save();ctx.globalAlpha=a;
- rect(x+1,y+edge*.75,w,h,'rgba(0,0,0,.32)',corner);
- rect(x,y,w,h,shade(hex,.48),corner);
- const fx=x+edge*.5, fy=y+edge*.5, fw=w-edge, fh=h-edge*1.35;
- rect(fx,fy,fw,fh,lighten(hex,.12),Math.max(1,corner-1));
- poly([[fx+2,fy+2],[fx+fw*.72,fy+2],[fx+fw*.32,fy+fh*.52],[fx+2,fy+fh*.72]],'rgba(255,255,255,.22)');
- poly([[fx+2,fy+fh*.76],[fx+fw*.42,fy+fh*.56],[fx+fw-2,fy+fh-2],[fx+2,fy+fh-2]],'rgba(3,16,40,.2)');
- ctx.strokeStyle='rgba(255,255,255,.67)';ctx.lineWidth=Math.max(1,edge*.42);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(fx+corner,fy+2);ctx.lineTo(fx+fw-corner,fy+2);ctx.stroke();
- ctx.strokeStyle='rgba(255,255,255,.32)';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(fx+2,fy+corner);ctx.lineTo(fx+2,fy+fh-corner);ctx.stroke();
- ctx.strokeStyle='rgba(2,8,25,.46)';ctx.lineWidth=Math.max(1,edge*.5);ctx.beginPath();ctx.moveTo(fx+corner,fy+fh-2);ctx.lineTo(fx+fw-corner,fy+fh-2);ctx.stroke();
- ctx.restore();
-}
-function draw(){
+  const corner=Math.max(2,Math.min(7,w*.14)),bevel=Math.max(1.3,w*.075);
+  ctx.save();ctx.globalAlpha=a;
+  ctx.shadowColor=color(hex,.44);ctx.shadowBlur=w*.17;ctx.shadowOffsetY=w*.055;
+  rect(x+.5,y+1.5,w-1,h-1,color(hex,.25),corner);
+  ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  const glass=ctx.createLinearGradient(x,y,x+w*.84,y+h);
+  glass.addColorStop(0,lighten(hex,.63));glass.addColorStop(.17,lighten(hex,.34));
+  glass.addColorStop(.48,color(hex,.51));glass.addColorStop(.78,shade(hex,.27));
+  glass.addColorStop(1,shade(hex,.51));
+  rect(x,y,w,h,glass,corner);
+  const px=x+bevel,py=y+bevel,pw=w-bevel*2,ph=h-bevel*2;
+  const inner=ctx.createLinearGradient(px,py,px+pw,py+ph);
+  inner.addColorStop(0,'rgba(255,255,255,.35)');
+  inner.addColorStop(.23,'rgba(255,255,255,.085)');
+  inner.addColorStop(.62,'rgba(10,25,58,.14)');
+  inner.addColorStop(1,'rgba(0,7,28,.25)');
+  rect(px,py,pw,ph,inner,Math.max(1,corner-2));
+  ctx.lineJoin='round';ctx.lineCap='round';
+  ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=Math.max(.8,w*.045);
+  ctx.beginPath();ctx.moveTo(x+corner,y+1.2);ctx.lineTo(x+w-corner,y+1.2);
+  ctx.moveTo(x+1.2,y+h-corner);ctx.lineTo(x+1.2,y+corner);ctx.stroke();
+  ctx.strokeStyle=color(hex,.82);ctx.lineWidth=Math.max(1,w*.058);
+  ctx.beginPath();ctx.moveTo(x+w-1.7,y+corner);ctx.lineTo(x+w-1.7,y+h-corner);
+  ctx.lineTo(x+w-corner,y+h-1.7);ctx.lineTo(x+corner,y+h-1.7);ctx.stroke();
+  poly([[px+1,py+1],[px+pw*.78,py+1],[px+pw*.3,py+ph*.47],[px+1,py+ph*.66]],'rgba(255,255,255,.16)');
+  if(w>25){
+   poly([[px+pw*.64,py+2],[px+pw*.79,py+2],[px+pw*.28,py+ph*.86],[px+pw*.21,py+ph*.86]],'rgba(255,255,255,.19)');
+   ctx.strokeStyle='rgba(255,255,255,.24)';ctx.lineWidth=.8;
+   ctx.beginPath();ctx.moveTo(px+pw*.15,py+ph*.79);ctx.lineTo(px+pw*.42,py+ph*.54);ctx.stroke();
+   rect(px+pw*.74,py+ph*.13,Math.max(2,w*.07),Math.max(2,w*.07),'rgba(255,255,255,.7)',1);
+  }
+  ctx.restore();
+ }
+ function draw(){
  ctx.clearRect(0,0,W,H);
  const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#0c1427');bg.addColorStop(1,'#111f37');rect(0,0,W,H,bg);
  const halo=ctx.createRadialGradient(240,365,25,240,365,370);halo.addColorStop(0,'rgba(67,115,203,.12)');halo.addColorStop(1,'rgba(7,16,34,0)');rect(0,0,W,H,halo);
- text('BLOCK FORGE',48,34,19,'#b5c7e4','left',800);text('TOUCH TEST  v0.9',432,34,11,'#647b9e','right',600);
+ text('BLOCK FORGE',48,34,19,'#b5c7e4','left',800);text('GLASS  v1.0',432,34,11,'#647b9e','right',600);
  ctx.save();ctx.translate(48,77);const pulse=1+.11*scorePulse;ctx.scale(pulse,pulse);text('Score '+score,0,0,27,'#f1f6ff','left',750);ctx.restore();text('Best '+best,432,77,24,'#a6bcdd','right',650);
  text(over?'No moves left!':'Drag a piece onto the board',48,124,16,over?'#ffa1a1':'#9aadc9');
  rect(OX-8,OY-8,N*C+16,N*C+16,'rgba(4,10,24,.45)',13);
@@ -177,7 +206,7 @@ function draw(){
  if(dragging&&selected>=0&&pieces[selected]>=0){
   const shape=SHAPES[pieces[selected]];
   if(snap){for(const [dx,dy] of shape){rect(OX+(snap[0]+dx)*C+1,OY+(snap[1]+dy)*C+1,C-2,C-2,'rgba(82,240,178,.17)',6);}}
-  const hex=snap?'#51eeac':'#f68086';
+  const hex=COLORS[selected];
   for(const [dx,dy] of shape)tile(smoothGhost[0]+dx*C+2,smoothGhost[1]+dy*C+2,C-4,C-4,hex,.84);
  }
  text('CHOOSE A BLOCK',48,589,12,'#7185a8','left',750);
@@ -192,15 +221,39 @@ function draw(){
  rect(313,693,116,44,'#415b7e',10);text('New game',371,716,16,'#edf5ff','center',700);
  text('Swipe up, then release to place',240,778,15,'#8aa0bf','center',500);
  text('Browser touch preview • Godot build unchanged',240,815,11,'#60789b','center',500);
- for(const shard of particles){const fade=Math.max(0,1-shard.age/shard.life),sz=shard.size*(.5+fade*.5),r=shard.rotation;ctx.save();ctx.translate(shard.x,shard.y);ctx.rotate(r);poly([[-sz*.6,-sz*.45],[sz*.75,-sz*.2],[0,sz*.8]],color(shard.hex,fade*.9));ctx.strokeStyle=`rgba(255,255,255,${fade*.85})`;ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(-sz*.6,-sz*.45);ctx.lineTo(sz*.75,-sz*.2);ctx.stroke();ctx.restore();}
- for(const wave of waves){const t=wave.age/wave.life,r=8+23*t;ctx.beginPath();ctx.arc(wave.x,wave.y,r,0,2*Math.PI);ctx.strokeStyle=color(wave.hex,(1-t)*.75);ctx.lineWidth=3;ctx.stroke();ctx.beginPath();ctx.arc(wave.x,wave.y,r*.45,0,2*Math.PI);ctx.fillStyle=color(wave.hex,(1-t)*.25);ctx.fill();}
+ for(const shard of particles){
+   const t=shard.age/shard.life,fade=Math.max(0,1-t),sz=shard.size*(1-.37*t);
+   ctx.save();ctx.translate(shard.x,shard.y);
+   if(shard.type==='spark'){
+    ctx.globalAlpha=fade*fade;
+    ctx.strokeStyle='rgba(241,252,255,.95)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(-sz*2,0);ctx.lineTo(sz*2,0);
+    ctx.moveTo(0,-sz*2);ctx.lineTo(0,sz*2);ctx.stroke();
+   }else{
+    ctx.rotate(shard.rotation);ctx.globalAlpha=fade*fade;
+    const shape=shard.type==='sliver'
+      ?[[-sz*.18,-sz],[sz*.45,-sz*.15],[sz*.12,sz*.9]]
+      :[[-sz*.82,-sz*.48],[sz*.78,-sz*.24],[sz*.05,sz]];
+    const g=ctx.createLinearGradient(-sz,-sz,sz,sz);
+    g.addColorStop(0,'rgba(255,255,255,.88)');
+    g.addColorStop(.37,color(shard.hex,.83));
+    g.addColorStop(1,color(shard.hex,.29));
+    poly(shape,g);
+    ctx.strokeStyle='rgba(236,250,255,.9)';ctx.lineWidth=.95;
+    ctx.beginPath();ctx.moveTo(...shape[0]);ctx.lineTo(...shape[1]);ctx.stroke();
+    ctx.strokeStyle='rgba(4,19,40,.48)';ctx.lineWidth=.6;
+    ctx.beginPath();ctx.moveTo(...shape[1]);ctx.lineTo(...shape[2]);ctx.stroke();
+   }
+   ctx.restore();
+  }
+  for(const wave of waves){const t=wave.age/wave.life,r=8+23*t;ctx.beginPath();ctx.arc(wave.x,wave.y,r,0,2*Math.PI);ctx.strokeStyle=color(wave.hex,(1-t)*.75);ctx.lineWidth=3;ctx.stroke();ctx.beginPath();ctx.arc(wave.x,wave.y,r*.45,0,2*Math.PI);ctx.fillStyle=color(wave.hex,(1-t)*.25);ctx.fill();}
  if(flash>0)rect(OX,OY,N*C,N*C,`rgba(255,210,98,${flash*.22})`);
  if(over){rect(OX,OY,N*C,N*C,'rgba(7,13,27,.67)');rect(90,290,300,155,'#1f3454',16);text('NO MOVES',240,334,29,'#f5f8ff','center',800);text('Score  '+score,240,375,22,'#b7cbed','center');text('Tap here to start again',240,412,15,'#94e1c6','center');}
 }
 function frame(t){
  const dt=Math.min((t-lastTime)/1000,.05);lastTime=t;
  if(dragging&&selected>=0&&pieces[selected]>=0){const target=targetForDrag();if(target){if(!ghostReady){smoothGhost=target.slice();ghostReady=true;}else{const k=1-Math.exp(-22*dt);smoothGhost[0]+=(target[0]-smoothGhost[0])*k;smoothGhost[1]+=(target[1]-smoothGhost[1])*k;}}}
- for(let i=particles.length-1;i>=0;i--){const s=particles[i];s.age+=dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=380*dt;s.rotation+=s.spin*dt;if(s.age>=s.life)particles.splice(i,1);}
+ for(let i=particles.length-1;i>=0;i--){const s=particles[i];s.age+=dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=480*dt;if(s.spin)s.rotation+=s.spin*dt;s.vx*=Math.exp(-.75*dt);if(s.age>=s.life)particles.splice(i,1);}
  for(let i=waves.length-1;i>=0;i--){waves[i].age+=dt;if(waves[i].age>=waves[i].life)waves.splice(i,1);}
  flash=Math.max(0,flash-2.8*dt);scorePulse=Math.max(0,scorePulse-3.5*dt);
  draw();requestAnimationFrame(frame);
