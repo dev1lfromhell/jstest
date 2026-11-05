@@ -31,11 +31,13 @@ jobs:
           gradle-version: "8.10.2"
           cache-disabled: true
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install required Android platform
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Use Android SDK preinstalled on runner
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "${GITHUB_ENV}"
+          SDK_DIR="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          MANAGER="$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f | head -n 1)"
+          test -n "$MANAGER"
+          "$MANAGER" --sdk_root="$SDK_DIR" --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Embed offline game
         run: |
