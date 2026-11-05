@@ -1,4 +1,4 @@
-# Glass Blocks Android preview (not a Godot export)
+# Glass Cascade Android preview (not a Godot export)
 
 This is a **temporary Android WebView testing build** of the browser prototype at
 `block-forge-touch-test/v15.html`. The GitHub Action copies this HTML into
