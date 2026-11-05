@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
-<title>Block Forge — Yandex Games candidate</title>
+<title>Glass Cascade — Block Puzzle</title>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -32,7 +32,7 @@ async function startSdk(){
 <script async src="/sdk.js" onload="startSdk()"></script>
 </head>
 <body>
-<canvas id="game" width="480" height="854" role="application" aria-label="Block Forge game: drag blocks from the bottom tray to the grid"></canvas>
+<canvas id="game" width="480" height="854" role="application" aria-label="Glass Cascade: drag glass shapes onto the puzzle grid"></canvas>
 <script>
 (() => {
 'use strict';
@@ -427,7 +427,7 @@ function tile(x,y,w,h,hex,a=1){
  ctx.clearRect(0,0,W,H);
  const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#0c1427');bg.addColorStop(1,'#111f37');rect(0,0,W,H,bg);
  const halo=ctx.createRadialGradient(240,365,25,240,365,370);halo.addColorStop(0,'rgba(67,115,203,.12)');halo.addColorStop(1,'rgba(7,16,34,0)');rect(0,0,W,H,halo);
- text('GLASS BLOCKS',48,34,19,'#b5c7e4','left',800);
+ text('GLASS CASCADE',48,34,19,'#b5c7e4','left',800);
   // No development or version labels in production UI.
   rect(349,15,82,34,muted?'rgba(83,97,122,.4)':'rgba(40,136,166,.65)',9);
   text(muted?tr('soundOff'):tr('soundOn'),390,32,12,muted?'#889ab8':'#b7ebf3','center',750);
