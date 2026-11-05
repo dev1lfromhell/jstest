@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
-<title>Block Forge — Glass Edition v1.2</title>
+<title>Block Forge — Glass Edition v1.3</title>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -94,22 +94,61 @@ function text(str,x,y,px,fill,align='left',weight=600) { ctx.fillStyle=fill;ctx.
   gain.gain.exponentialRampToValueAtTime(.0001,t+dur);
   osc.connect(gain);gain.connect(audioMaster);osc.start(t);osc.stop(t+dur+.02);
  }
+ // Glass sounds use crackle/noise transients instead of sci-fi pitch sweeps.
+ let crackleBuffer=null;
+ function crackle(){
+  const ac=audioStart();if(!ac)return null;
+  if(!crackleBuffer){
+   const len=Math.ceil(ac.sampleRate*.42);
+   crackleBuffer=ac.createBuffer(1,len,ac.sampleRate);
+   const data=crackleBuffer.getChannelData(0);
+   for(let i=0;i<len;i++)data[i]=(Math.random()*2-1);
+  }
+  return crackleBuffer;
+ }
+ function noiseImpact(delay=.0,duration=.12,volume=.22,highpass=750){
+  const ac=audioStart(), buf=crackle();if(!ac||!buf)return;
+  const t=ac.currentTime+.018+delay;
+  const source=ac.createBufferSource();source.buffer=buf;
+  const hi=ac.createBiquadFilter();hi.type='highpass';hi.frequency.value=highpass;
+  const lo=ac.createBiquadFilter();lo.type='lowpass';lo.frequency.value=7200;
+  const gain=ac.createGain();
+  gain.gain.setValueAtTime(.0001,t);
+  gain.gain.linearRampToValueAtTime(volume,t+.003);
+  gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
+  source.connect(hi);hi.connect(lo);lo.connect(gain);gain.connect(audioMaster);
+  source.start(t,Math.random()*.18);source.stop(t+duration+.01);
+ }
+ function shortChime(freq,delay=0,vol=.025){
+  const ac=audioStart();if(!ac)return;
+  const t=ac.currentTime+.019+delay;
+  const osc=ac.createOscillator(),gain=ac.createGain();
+  osc.type='sine';osc.frequency.value=freq;
+  gain.gain.setValueAtTime(.0001,t);
+  gain.gain.linearRampToValueAtTime(vol,t+.002);
+  gain.gain.exponentialRampToValueAtTime(.0001,t+.14);
+  osc.connect(gain);gain.connect(audioMaster);
+  osc.start(t);osc.stop(t+.145);
+ }
  function clickSound(){
-  tone(650,.13,.16,'sine',0,980);
-  tone(1130,.1,.075,'triangle',.028,1490);
+  // Soft, tactile ceramic tap on placement.
+  noiseImpact(0,.042,.11,1400);
+  shortChime(1080,.008,.018);
  }
  function glassSound(lines){
-  const count=Math.min(8,4+lines*2);
-  for(let i=0;i<count;i++){
-   const hz=1000+((i*337)%1550);
-   tone(hz,.14+(i%3)*.055,.049,'triangle',i*.024,hz*.58);
+  // First a sharp crack, then rapid independent tiny fragment hits.
+  noiseImpact(0,.17,.34,450);
+  const hits=Math.min(12,7+lines*2);
+  for(let i=0;i<hits;i++){
+   const delay=.018+i*.014+Math.random()*.016;
+   noiseImpact(delay,.035+Math.random()*.045,.07+Math.random()*.055,1100+Math.random()*1700);
   }
-  tone(350,.2,.09,'sine',.02,150);
+  // Only two small natural high-pitched resonances, with no downward slide.
+  shortChime(1880,.014,.033);
+  shortChime(2670,.06,.02);
  }
  function soundTest(){
-  // Audible response on a direct tap confirms audio is enabled.
-  clickSound();
-  tone(1560,.22,.085,'sine',.08,930);
+  glassSound(1);
  }
  function newGame() {
  board = Array.from({length:N},()=>Array(N).fill(-1));
@@ -250,7 +289,7 @@ function tile(x,y,w,h,hex,a=1){
  const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#0c1427');bg.addColorStop(1,'#111f37');rect(0,0,W,H,bg);
  const halo=ctx.createRadialGradient(240,365,25,240,365,370);halo.addColorStop(0,'rgba(67,115,203,.12)');halo.addColorStop(1,'rgba(7,16,34,0)');rect(0,0,W,H,halo);
  text('BLOCK FORGE',48,34,19,'#b5c7e4','left',800);
-  text('GLASS  v1.2',304,34,11,'#647b9e','right',600);
+  text('GLASS  v1.3',304,34,11,'#647b9e','right',600);
   rect(349,15,82,34,muted?'rgba(83,97,122,.4)':'rgba(40,136,166,.65)',9);
   text(muted?'🔇 OFF':'🔊 ON',390,32,15,muted?'#889ab8':'#b7ebf3','center',750);
  ctx.save();ctx.translate(48,77);const pulse=1+.11*scorePulse;ctx.scale(pulse,pulse);text('Score '+score,0,0,27,'#f1f6ff','left',750);ctx.restore();text('Best '+best,432,77,24,'#a6bcdd','right',650);
