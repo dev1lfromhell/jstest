@@ -59,7 +59,7 @@ const storageKey = 'block-forge-web-test-v08-best';
 let board, pieces, score, best, over, selected, dragging, snap, previousSnap;
 let dragPos, smoothGhost, ghostReady, particles, waves, flash, scorePulse;
 let pointerId = null, lastTime = performance.now();
- let clearStreak=0, placedCount=0, revived=false, adBusy=false;
+ let clearStreak=0, placedCount=0, revived=false, adBusy=false, gamePaused=false;
  let audioCtx=null, audioMaster=null, muted=false, scorePopups=[];
 let dpr = 1;
 function resize() {
@@ -194,14 +194,16 @@ function rewardedContinue(){
  if(!window.ysdk||!over||revived||adBusy)return;
  adBusy=true;
  try{window.ysdk.adv.showRewardedVideo({callbacks:{
+  onOpen:()=>{gamePaused=true;try{window.ysdk?.features?.GameplayAPI?.stop();}catch{} if(audioCtx)audioCtx.suspend().catch(()=>{});},
   onRewarded:grantRevive,
-  onClose:()=>{adBusy=false;},
-  onError:()=>{adBusy=false;}
+  onClose:()=>{adBusy=false;gamePaused=false;if(!over){try{window.ysdk?.features?.GameplayAPI?.start();}catch{}}},
+  onError:()=>{adBusy=false;gamePaused=false;}
  }});}catch{adBusy=false;}
 }
 function newGame() {
  board = Array.from({length:N},()=>Array(N).fill(-1));
  score=0; clearStreak=0; placedCount=0; revived=false; adBusy=false; over=false; selected=-1; dragging=false; pointerId=null;
+ try{window.ysdk?.features?.GameplayAPI?.start();}catch{}
  snap=null; previousSnap=null; ghostReady=false; dragPos=[0,0]; smoothGhost=[0,0];
  particles=[];waves=[];scorePopups=[];flash=0;scorePulse=0;refill();
 }
@@ -353,7 +355,7 @@ function spawnShards(cx,cy,hex){
 function getPos(e){ const b=canvas.getBoundingClientRect();return [(e.clientX-b.left)*W/b.width, (e.clientY-b.top)*H/b.height]; }
 const inBox=(p,x,y,w,h)=>p[0]>=x&&p[0]<=x+w&&p[1]>=y&&p[1]<=y+h;
 canvas.addEventListener('pointerdown',e=>{
- if(pointerId!==null)return;
+ if(pointerId!==null||gamePaused)return;
  const p=getPos(e);
   if(inBox(p,344,14,108,37)){
    muted=!muted;if(!muted){audioStart();soundTest();}e.preventDefault();return;
@@ -510,6 +512,10 @@ function frame(t){
 try{best=Number(localStorage.getItem(storageKey)||0)||0;}catch{best=0;}
 newGame();resize();requestAnimationFrame(frame);
  window.gameMounted=true;window.reportReady();
+ if(window.ysdk){
+  window.ysdk.on('game_api_pause',()=>{gamePaused=true;if(audioCtx)audioCtx.suspend().catch(()=>{});});
+  window.ysdk.on('game_api_resume',()=>{gamePaused=false;});
+ }
 })();
 </script>
 </body>
