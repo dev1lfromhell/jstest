@@ -58,6 +58,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha: false });
 if (!ctx) { document.body.textContent = 'Canvas is unavailable'; return; }
 const storageKey = 'block-forge-web-test-v08-best';
+const gameSaveKey='glass-cascade-yandex-game-v1';
 let board, pieces, score, best, over, selected, dragging, snap, previousSnap;
 let dragPos, smoothGhost, ghostReady, particles, waves, flash, scorePulse;
 let pointerId = null, lastTime = performance.now();
@@ -195,6 +196,7 @@ function text(str,x,y,px,fill,align='left',weight=600) { ctx.fillStyle=fill;ctx.
  pieces=createFairTray(board);selected=-1;snap=null;dragging=false;ghostReady=false;
  over=!hasMove();
  scorePopups.push({x:240,y:OY+N*C*.50,label:tr('continueTitle'),age:0,life:1.3});
+ persistGame();
  try{window.ysdk?.features?.GameplayAPI?.start();}catch{}
 }
 function rewardedContinue(){
@@ -207,12 +209,36 @@ function rewardedContinue(){
   onError:()=>{adBusy=false;gamePaused=false;}
  }});}catch{adBusy=false;}
 }
-function newGame() {
+function persistGame(){
+ try{localStorage.setItem(gameSaveKey,JSON.stringify({version:1,board,pieces,score,over,clearStreak,placedCount,revived,muted}));}
+ catch(e){console.warn('Progress save unavailable',e);}
+}
+function restoreGame(){
+ try{
+  const raw=localStorage.getItem(gameSaveKey);if(!raw)return false;
+  const data=JSON.parse(raw);
+  if(data.version!==1||!Array.isArray(data.board)||data.board.length!==N
+   ||!data.board.every(row=>Array.isArray(row)&&row.length===N&&row.every(c=>Number.isInteger(c)&&c>=-1&&c<3))
+   ||!Array.isArray(data.pieces)||data.pieces.length!==3
+   ||!data.pieces.every(p=>Number.isInteger(p)&&p>=-1&&p<SHAPES.length)
+   ||!Number.isSafeInteger(data.score)||data.score<0
+   ||!Number.isSafeInteger(data.placedCount)||data.placedCount<0
+   ||!Number.isSafeInteger(data.clearStreak)||data.clearStreak<0)return false;
+  board=data.board;pieces=data.pieces;score=data.score;over=!!data.over;
+  clearStreak=data.clearStreak;placedCount=data.placedCount;revived=!!data.revived;muted=!!data.muted;
+  selected=-1;dragging=false;pointerId=null;snap=null;previousSnap=null;ghostReady=false;
+  best=Math.max(best,score);
+  if(over){try{window.ysdk?.features?.GameplayAPI?.stop();}catch{}}
+  return true;
+ }catch(e){console.warn('Progress restore unavailable',e);return false;}
+}
+function newGame(persist=true) {
  board = Array.from({length:N},()=>Array(N).fill(-1));
  score=0; clearStreak=0; placedCount=0; revived=false; adBusy=false; over=false; selected=-1; dragging=false; pointerId=null;
  try{window.ysdk?.features?.GameplayAPI?.start();}catch{}
  snap=null; previousSnap=null; ghostReady=false; dragPos=[0,0]; smoothGhost=[0,0];
  particles=[];waves=[];scorePopups=[];flash=0;scorePulse=0;refill();
+ if(persist)persistGame();
 }
 // Build a fresh tray by trying short legal sequences on a *copy* of the board.
  // Guarantees a possible order for all three shapes whenever a 3-move route exists.
@@ -358,6 +384,7 @@ function spawnShards(cx,cy,hex){
  if(score>best){best=score;try{localStorage.setItem(storageKey,String(best));}catch{}}
  over=!hasMove();
  if(over){try{window.ysdk?.features?.GameplayAPI?.stop();}catch{}}
+ persistGame();
 }
 function getPos(e){ const b=canvas.getBoundingClientRect();return [(e.clientX-b.left)*W/b.width, (e.clientY-b.top)*H/b.height]; }
 const inBox=(p,x,y,w,h)=>p[0]>=x&&p[0]<=x+w&&p[1]>=y&&p[1]<=y+h;
@@ -365,7 +392,7 @@ canvas.addEventListener('pointerdown',e=>{
  if(pointerId!==null||gamePaused)return;
  const p=getPos(e);
   if(inBox(p,344,14,108,37)){
-   muted=!muted;if(!muted){audioStart();soundTest();}e.preventDefault();return;
+   muted=!muted;if(!muted){audioStart();soundTest();}persistGame();e.preventDefault();return;
   }
   audioStart();
  if(inBox(p,302,690,148,54)){newGame();e.preventDefault();return;}
@@ -517,7 +544,7 @@ function frame(t){
  draw();requestAnimationFrame(frame);
 }
 try{best=Number(localStorage.getItem(storageKey)||0)||0;}catch{best=0;}
-newGame();resize();requestAnimationFrame(frame);
+newGame(false);restoreGame();resize();requestAnimationFrame(frame);
  window.addEventListener('blockforge-sdk-ready',()=>{
    window.ysdk.on('game_api_pause',()=>{gamePaused=true;if(audioCtx)audioCtx.suspend().catch(()=>{});});
    window.ysdk.on('game_api_resume',()=>{gamePaused=false;});
