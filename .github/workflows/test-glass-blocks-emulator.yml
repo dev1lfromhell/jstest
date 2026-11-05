@@ -1,0 +1,58 @@
+name: Android emulator smoke test for Glass Blocks
+
+on:
+  push:
+    paths:
+      - ".github/workflows/test-glass-blocks-emulator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  emulator-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download built APK from successful CI run
+        uses: actions/download-artifact@v4
+        with:
+          name: glass-blocks-android-debug-v15
+          run-id: 42104311197
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: apk
+      - name: Launch game on Android emulator and test touch
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: "-no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim"
+          script: |
+            adb install -r apk/app-debug.apk
+            adb shell am start -n dev.lastbastion.glassblocks.preview/.MainActivity
+            sleep 12
+            adb shell pidof dev.lastbastion.glassblocks.preview
+            mkdir -p screenshots
+            adb shell screencap -p /sdcard/preview_before.png
+            adb pull /sdcard/preview_before.png screenshots/before.png
+            adb shell input swipe 230 1448 540 1002 750
+            sleep 3
+            adb shell screencap -p /sdcard/preview_after.png
+            adb pull /sdcard/preview_after.png screenshots/after.png
+            adb shell pidof dev.lastbastion.glassblocks.preview
+            adb logcat -d -s AndroidRuntime:E > screenshots/crash_log.txt
+            if grep -q "FATAL EXCEPTION" screenshots/crash_log.txt; then cat screenshots/crash_log.txt; exit 1; fi
+      - name: Upload emulator screenshots and crash log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glass-blocks-emulator-smoke-v15
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn
