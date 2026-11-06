@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="theme-color" content="#101e31">
   <meta name="description" content="Overload Defense — прототип стратегической Tower Defense с выбором волн, гарнизонами, управляемыми героями, специализациями и перегрузками башен.">
-  <title>Overload Defense — прототип 0.5.1</title>
+  <title>Overload Defense — прототип 0.6</title>
   <style>
 :root {color-scheme:dark} * {box-sizing:border-box}
 html,body {margin:0;width:100%;height:100%;overflow:hidden;background:#081521;overscroll-behavior:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
@@ -33,7 +33,7 @@ canvas{display:block;touch-action:none;outline:0;box-shadow:0 0 48px #0007;backg
 const W=1280,H=720,TOP=58,GROUND_BOTTOM=553,WAVES=10,MAX_TOWER_LEVEL=6;
 const canvas=document.getElementById('game');let ctx=canvas.getContext('2d',{alpha:false});
 if(!ctx){document.body.innerHTML='Ваш браузер не поддерживает Canvas 2D';return;}
-let ratio=1,last=performance.now(),clock=0,particles=[],bolts=[],enemies=[],pads=[],spawn=[],timeToSpawn=0,wave=0,life=20,money=400,selected=-1,buildType=0,mode='lobby',speed=1,paused=false,chosen=null,won=false,totalKills=0,toast='',toastTime=0,inspected=0,drag=null,hoverPad=-1,firstUpgradeHint=true,guards=[],hero=null,heroFocused=false,rallyPlacement=false,lobbyHero=0,heroHoverRoad=null,heroDrag=null; 
+let ratio=1,last=performance.now(),clock=0,particles=[],bolts=[],enemies=[],pads=[],spawn=[],timeToSpawn=0,wave=0,life=20,money=400,selected=-1,buildType=0,mode='lobby',speed=1,paused=false,chosen=null,won=false,totalKills=0,toast='',toastTime=0,inspected=0,drag=null,hoverPad=-1,firstUpgradeHint=true,guards=[],hero=null,heroFocused=false,rallyPlacement=false,lobbyHero=0,heroHoverRoad=null,heroDrag=null,inventoryOpen=false,selectedItemId=null,inventoryPage=0,lastLoot=null; 
 const types=[
  {name:'Пулемёт',short:'ПУЛЕМЁТ',cost:100,dmg:13,rate:3.3,range:135,col:'#39e3d4',over:'Шквальный огонь',spec:['Шквал','Бронебой'],desc:['×2 скорострельность','Бронебойные снаряды']},
  {name:'Артиллерия',short:'АРТИЛЛЕРИЯ',cost:190,dmg:47,rate:.72,range:155,col:'#ff9c53',over:'Массированный залп',spec:['Фугас','Бронелом'],desc:['Большой радиус взрыва','Урон тяжёлым целям']},
@@ -58,56 +58,121 @@ const HERO_DEFS=[
  {name:'АРИНА',role:'Щит авангарда',color:'#f8be66',hp:200,dmg:18,range:36,rate:.73,move:92,skill:'УДАРНАЯ ВОЛНА'},
  {name:'КАЙ',role:'Дальний бой',color:'#8df1ff',hp:132,dmg:16,range:115,rate:.42,move:104,skill:'ИМПУЛЬСНЫЙ ЗАЛП'}
 ];
-function freshProfile(){return {chosen:0,marks:3,levels:[1,1],weapon:[0,0],armor:[0,0],unlockedWeapon:[false,false],unlockedArmor:[false,false]};}
+// Persistent hero progression and loot inventory (no gear purchases for stars).
+const SLOT_NAMES=['Оружие','Шлем','Броня','Перчатки','Ботинки','Артефакт'];
+const SLOT_ICONS=['⚔','◈','▣','✦','▴','◆'];
+const RARITIES=[
+ {name:'Обычное',color:'#aeb7c1',mult:1},
+ {name:'Необычное',color:'#78df86',mult:1.7},
+ {name:'Редкое',color:'#67b5ff',mult:2.6},
+ {name:'Эпическое',color:'#bf85ff',mult:4},
+ {name:'Легендарное',color:'#ffad43',mult:6.2}
+];
+const GEAR_BASE=['Импульсный карабин','Полевой шлем','Бронежилет','Тактические перчатки','Реактивные ботинки','Энергетический модуль'];
+function gearName(item){return GEAR_BASE[item.slot];}
+function makeGear(slot,rarity,id){return {id,slot,rarity};}
+function freshProfile(){
+ return {chosen:0,marks:3,levels:[1,1],equipment:[Array(6).fill(null),Array(6).fill(null)],
+   inventory:[makeGear(0,0,1),makeGear(3,0,2)],nextItemId:3};
+}
 function loadProfile(){
  try{
   const saved=JSON.parse(localStorage.getItem('overload-v04-profile')||'null');
   if(!saved)return freshProfile();
   const base=freshProfile();
-  for(const k of Object.keys(base)){
-   if(k in saved && (Array.isArray(base[k])?Array.isArray(saved[k]):typeof saved[k]===typeof base[k]))base[k]=saved[k];
-  }
-  base.chosen=base.chosen===1?1:0;
-  base.marks=Math.max(0,Math.min(999,Math.floor(base.marks)||0));
-  for(let i=0;i<2;i++){
-   base.levels[i]=Math.max(1,Math.min(5,Math.floor(base.levels[i])||1));
-   base.weapon[i]=base.unlockedWeapon[i]&&base.weapon[i]?1:0;
-   base.armor[i]=base.unlockedArmor[i]&&base.armor[i]?1:0;
+  base.chosen=saved.chosen===1?1:0;
+  base.marks=Math.max(0,Math.min(999,Math.floor(saved.marks)||0));
+  if(Array.isArray(saved.levels))for(let i=0;i<2;i++)
+   base.levels[i]=Math.max(1,Math.min(5,Math.floor(saved.levels[i])||1));
+  if(Array.isArray(saved.inventory)&&Array.isArray(saved.equipment)){
+   // Safely restore real item instances and unique equip references.
+   const ids=new Set();base.inventory=[];
+   for(const it of saved.inventory.slice(0,120)){
+    if(!it||!Number.isInteger(it.id)||it.id<1||ids.has(it.id)||!Number.isInteger(it.slot)||it.slot<0||it.slot>=6||!Number.isInteger(it.rarity)||it.rarity<0||it.rarity>4)continue;
+    ids.add(it.id);base.inventory.push(makeGear(it.slot,it.rarity,it.id));
+   }
+   if(Array.isArray(saved.equipment)){
+    const assigned=new Set();
+    for(let h=0;h<2;h++)for(let k=0;k<6;k++){
+     const id=saved.equipment[h]?.[k];
+     if(ids.has(id)&&!assigned.has(id)&&base.inventory.find(it=>it.id===id)?.slot===k){base.equipment[h][k]=id;assigned.add(id);}
+    }
+   }
+   base.nextItemId=Math.max(3,...base.inventory.map(it=>it.id+1));
+  }else{
+   // Migration from the old paid-by-stars weapon/armor system: preserve unlocked perks as real items.
+   base.inventory=[];base.nextItemId=1;
+   for(let h=0;h<2;h++){
+    if(saved.unlockedWeapon?.[h]){
+     const item=makeGear(0,1,base.nextItemId++);base.inventory.push(item);if(saved.weapon?.[h])base.equipment[h][0]=item.id;
+    }
+    if(saved.unlockedArmor?.[h]){
+     const item=makeGear(2,1,base.nextItemId++);base.inventory.push(item);if(saved.armor?.[h])base.equipment[h][2]=item.id;
+    }
+   }
+   if(base.inventory.length===0){base.inventory.push(makeGear(0,0,base.nextItemId++),makeGear(3,0,base.nextItemId++));}
   }
   return base;
  }catch{return freshProfile();}
 }
 let profile=loadProfile();
 function saveProfile(){try{localStorage.setItem('overload-v04-profile',JSON.stringify(profile));}catch{}}
-function heroStatsAt(i,lvl,weapon,armor){
- const d=HERO_DEFS[i];
- return {hp:Math.round(d.hp*(1+.19*(lvl-1))*(armor?1.24:1)),
-  dmg:d.dmg*(1+.17*(lvl-1))*(weapon?1.22:1),
-  range:d.range+(weapon?8:0),rate:d.rate,move:d.move};
+function itemById(id){return profile.inventory.find(it=>it.id===id)||null;}
+function itemOwner(id){for(let h=0;h<2;h++)for(let slot=0;slot<6;slot++)if(profile.equipment[h][slot]===id)return h;return -1;}
+function itemBonuses(it){
+ if(!it)return {hp:0,dmg:0,range:0,rate:0,move:0,regen:0};
+ const m=RARITIES[it.rarity].mult, b={hp:0,dmg:0,range:0,rate:0,move:0,regen:0};
+ if(it.slot===0){b.dmg=4*m; b.range=3*m;}
+ if(it.slot===1){b.hp=14*m;}
+ if(it.slot===2){b.hp=24*m;}
+ if(it.slot===3){b.dmg=2*m;b.rate=.018*m;}
+ if(it.slot===4){b.hp=8*m;b.move=3*m;}
+ if(it.slot===5){b.range=6*m;b.regen=.30*m;}
+ return b;
 }
-function heroStats(i=profile.chosen){return heroStatsAt(i,profile.levels[i],profile.weapon[i],profile.armor[i]);}
-function heroNextStats(i){return heroStatsAt(i,Math.min(5,profile.levels[i]+1),profile.weapon[i],profile.armor[i]);}
+function heroStatsAt(i,lvl,loadout=profile.equipment[i]){
+ const d=HERO_DEFS[i],b={hp:0,dmg:0,range:0,rate:0,move:0,regen:0};
+ for(const id of loadout){const p=itemBonuses(itemById(id));for(const stat of Object.keys(b))b[stat]+=p[stat];}
+ return {hp:Math.round(d.hp*(1+.19*(lvl-1))+b.hp),dmg:d.dmg*(1+.17*(lvl-1))+b.dmg,
+  range:Math.round(d.range+b.range),rate:Math.max(.24,d.rate-b.rate),
+  move:d.move+b.move,regen:Number((.8+.12*(lvl-1)+b.regen).toFixed(2))};
+}
+function heroStats(i=profile.chosen){return heroStatsAt(i,profile.levels[i]);}
+function heroNextStats(i){return heroStatsAt(i,Math.min(5,profile.levels[i]+1));}
 function fmtStat(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 function statDiff(next,now){const d=next-now;return (d>=0?'+':'')+fmtStat(d);}
-
-function spawnHero(){
- const st=heroStats();
- hero={index:profile.chosen,d:length-150,targetD:length-150,hp:st.hp,max:st.hp,last:0,skillAt:0,skillUntil:0,dead:false,deployed:false};
- heroFocused=false;heroHoverRoad=null;
-}
 function levelHero(){
  const i=lobbyHero,lv=profile.levels[i];if(lv>=5){say('Достигнут 5-й уровень');return;}
  const price=lv*2;if(profile.marks<price){say('Недостаточно жетонов');return;}
  profile.marks-=price;profile.levels[i]++;saveProfile();say('Герой улучшен до '+(lv+1)+' уровня');
 }
-function equipHero(slot){
- const i=lobbyHero,unlocked=slot==='weapon'?profile.unlockedWeapon:profile.unlockedArmor;
- const equipped=slot==='weapon'?profile.weapon:profile.armor;
- if(!unlocked[i]){
-  if(profile.marks<3){say('Нужно 3 жетона');return;}
-  profile.marks-=3;unlocked[i]=true;equipped[i]=1;
- }else equipped[i]=equipped[i]?0:1;
- saveProfile();
+function openInventory(){if(paused||mode!=='lobby')return;inventoryOpen=true;selectedItemId=null;inventoryPage=0;}
+function equipSelectedItem(){
+ if(!inventoryOpen||selectedItemId===null)return false;
+ const it=itemById(selectedItemId);if(!it)return false;
+ const slot=it.slot,owner=itemOwner(it.id);
+ if(owner===lobbyHero){profile.equipment[lobbyHero][slot]=null;say('Снято: '+gearName(it));}
+ else {
+  if(owner>=0)profile.equipment[owner][slot]=null;
+  profile.equipment[lobbyHero][slot]=it.id;
+  say('Надето: '+gearName(it)+' · '+RARITIES[it.rarity].name);
+ }
+ saveProfile();return true;
+}
+function rollRarity(n,hard){
+ const p=Math.random();
+ // Better rewards start late; legendary is deliberately rare, never purchased.
+ if(n>=8 && p<(hard?.016:.006))return 4;
+ if(n>=6 && p<(hard?.10:.054))return 3;
+ if(n>=4 && p<(hard?.30:.19))return 2;
+ if(p<(hard?.70:.59))return 1;
+ return 0;
+}
+function grantLoot(){
+ if(wave<2||wave%2!==0||profile.inventory.length>=90)return null;
+ const it=makeGear(Math.floor(Math.random()*6),rollRarity(wave,!!chosen?.hard),profile.nextItemId++);
+ profile.inventory.push(it);saveProfile();lastLoot=it;
+ return it;
 }
 function awardMarks(){
  const reward=mode==='won'?3:wave>=4?1:0;
@@ -115,6 +180,11 @@ function awardMarks(){
  return reward;
 }
 function startCampaign(){profile.chosen=lobbyHero;saveProfile();reset();spawnHero();say('Герой готов: '+HERO_DEFS[profile.chosen].name);}
+function spawnHero(){
+ const st=heroStats();
+ hero={index:profile.chosen,d:length-150,targetD:length-150,hp:st.hp,max:st.hp,last:0,skillAt:0,skillUntil:0,dead:false,deployed:false};
+ heroFocused=false;heroHoverRoad=null;
+}
 function pickRoad(point,range=95){
  let closest=null,dist=range;
  for(let k=0;k<road.length;k++){
@@ -146,8 +216,7 @@ function commandHero(point){
  const r=pickRoad(point,115);if(!r)return false;
  hero.targetD=clamp(r.d,35,length-40);
  hero.deployed=true;
- // A successful order ends placement mode; the preview must no longer follow the pointer.
-  heroFocused=false;heroHoverRoad=null;selected=-1;
+ heroFocused=false;heroHoverRoad=null;selected=-1;
  say('Герой отправлен · Нажми на него, чтобы увидеть дальность');
  return true;
 }
@@ -188,6 +257,7 @@ function updateGuards(dt){
 function updateHero(dt){
  if(!hero||hero.dead||!hero.deployed)return;
  const st=heroStats(hero.index),dist=hero.targetD-hero.d;
+  hero.hp=Math.min(hero.max,hero.hp+dt*st.regen); // steady natural healing, even during combat
  // The hero leaves the castle and walks to the commanded position.
  hero.d+=Math.sign(dist)*Math.min(Math.abs(dist),dt*st.move*1.8);
  // Only nearby enemies can retaliate: a ranged hero is not hit from across the road.
@@ -217,7 +287,7 @@ function heroStopsEnemy(e,step){
  return true;
 }
 
-function reset(){clock=0;particles=[];bolts=[];enemies=[];spawn=[];timeToSpawn=0;wave=0;life=20;money=400;selected=-1;buildType=0;mode='choice';paused=false;speed=1;chosen=null;won=false;totalKills=0;guards=[];hero=null;heroFocused=false;heroHoverRoad=null;heroDrag=null;rallyPlacement=false;toast='Обучение: перетащи башню из магазина на площадку';toastTime=4;pads=padLocations.map(([x,y],i)=>({x,y,tower:null,id:i}));}
+function reset(){clock=0;particles=[];bolts=[];enemies=[];spawn=[];timeToSpawn=0;wave=0;life=20;money=400;selected=-1;buildType=0;mode='choice';paused=false;speed=1;chosen=null;won=false;totalKills=0;guards=[];hero=null;heroFocused=false;heroHoverRoad=null;heroDrag=null;rallyPlacement=false;inventoryOpen=false;selectedItemId=null;inventoryPage=0;lastLoot=null;toast='Обучение: перетащи башню из магазина на площадку';toastTime=4;pads=padLocations.map(([x,y],i)=>({x,y,tower:null,id:i}));}
 function say(s){toast=s;toastTime=2.5;}
 function build(i){const pad=pads[i];if(pad.tower){selected=i;return;}const type=types[buildType];if(money<type.cost){say('Недостаточно монет');return;}money-=type.cost;pad.tower={type:buildType,level:1,spec:-1,angle:0,last:0,overEnd:0,heatEnd:0,readyAt:0,target:null};if(buildType===4){const r=pickRoad(pad,250);pad.tower.rallyD=r?r.d:120;}selected=i;heroFocused=false;rallyPlacement=false;say(buildType===4?'Гарнизон: два бойца выходят на дорогу':'Башня построена!');}
 // Each purchase is significantly more expensive. Branch choice is free only after buying tier 3.
@@ -322,7 +392,7 @@ function update(dt){if(paused)return;clock+=dt;toastTime=Math.max(0,toastTime-dt
  for(const e of enemies){if(e.dead)continue;const slow=e.slowUntil>clock?e.slowMult:1;const stun=(e.stunUntil>clock||(e.blockUntil||0)>clock)?0:1;const step=e.v*dt*slow*stun;e.blockedByHero=false;if(!heroStopsEnemy(e,step))e.d+=step;if(e.d>=length){e.dead=true;life=Math.max(0,life-(e.kind==='tank'?3:1));burst(1208,340,'#ff6767',13);if(life===0&&mode==='battle'){mode='lost';const bonus=awardMarks();say('Оборона прорвана! '+(bonus?'+'+bonus+' жетон':'Попробуй другой план'));}}}
  for(const pad of pads){const t=pad.tower;if(!t||t.type===4||isHot(t))continue;const s=stats(t);const visible=enemies.filter(e=>!e.dead&&(()=>{const q=along(e.d);return Math.hypot(q.x-pad.x,q.y-pad.y)<s.range;})()).sort((a,b)=>b.d-a.d);if(visible.length){t.target=visible[0];const p=along(visible[0].d);t.angle=Math.atan2(p.y-pad.y,p.x-pad.x);}t.last-=dt;if(visible.length&&t.last<=0){fire(pad,t,visible[0]);t.last=1/s.rate;}}
  enemies=enemies.filter(e=>!e.dead);
- if(mode==='battle'&&!spawn.length&&!enemies.length){money+=chosen.coins;selected=-1;mode=wave>=WAVES?'won':'choice';if(mode==='won'){won=true;saveBest();const bonus=awardMarks();say('ПОБЕДА! +'+bonus+' жетона героя');}else{if(hero&&!hero.dead)hero.hp=Math.min(hero.max,hero.hp+Math.round(hero.max*.22));for(const g of guards)if(!g.dead)g.hp=Math.min(g.max,g.hp+Math.round(g.max*.25));say('Волна пройдена! +'+chosen.coins+' монет');}}
+ if(mode==='battle'&&!spawn.length&&!enemies.length){money+=chosen.coins;selected=-1;const found=grantLoot();mode=wave>=WAVES?'won':'choice';if(mode==='won'){won=true;saveBest();const bonus=awardMarks();say('ПОБЕДА! +'+bonus+' жетона героя'+(found?' · Найдено снаряжение':''));}else{if(hero&&!hero.dead)hero.hp=Math.min(hero.max,hero.hp+Math.round(hero.max*.10));for(const g of guards)if(!g.dead)g.hp=Math.min(g.max,g.hp+Math.round(g.max*.25));say('Волна пройдена! +'+chosen.coins+' монет'+(found?' · ДОБЫЧА: '+RARITIES[found.rarity].name.toUpperCase()+' '+gearName(found):''));}}
 }
 function saveBest(){try{localStorage.setItem('overload-defense-best',String(Math.max(wave,Number(localStorage.getItem('overload-defense-best'))||0)));}catch{}}
 // Canvas primitives (all illustration is original and programmatically generated).
@@ -640,27 +710,87 @@ function drawLobby(){
  }
  const lvl=profile.levels[lobbyHero];
  button(250,388,239,49,lvl>=5?'МАКС. УРОВЕНЬ':'⬆ УРОВЕНЬ '+(lvl+1)+' · '+lvl*2+'★','#2b7f6b',lvl<5);
- button(498,388,259,49,(profile.weapon[lobbyHero]?'⚔ СНАРЯЖЕНО':'⚔ ОРУЖИЕ')+(profile.unlockedWeapon[lobbyHero]?' · СМЕНИТЬ':' · 3★'),'#386e88');
- button(767,388,268,49,(profile.armor[lobbyHero]?'▣ НАДЕТО':'▣ БРОНЯ')+(profile.unlockedArmor[lobbyHero]?' · СМЕНИТЬ':' · 3★'),'#386e88');
- const now=heroStats(lobbyHero),up=heroNextStats(lobbyHero),w=heroStatsAt(lobbyHero,lvl,profile.weapon[lobbyHero]?0:1,profile.armor[lobbyHero]),a=heroStatsAt(lobbyHero,lvl,profile.weapon[lobbyHero],profile.armor[lobbyHero]?0:1);
+ button(498,388,537,49,'🎒 СНАРЯЖЕНИЕ / ИНВЕНТАРЬ ('+profile.inventory.length+')','#386e88');
+ const now=heroStats(lobbyHero),up=heroNextStats(lobbyHero);
  label(lvl>=5?'Макс. уровень героя':'СЛЕД. УРОВЕНЬ: HP '+now.hp+'→'+up.hp+' (+'+(up.hp-now.hp)+')  Урон '+Math.round(now.dmg)+'→'+Math.round(up.dmg)+' (+'+Math.round(up.dmg-now.dmg)+')',640,455,15,'#a9f6bb','center');
- label('ОРУЖИЕ: урон '+Math.round(now.dmg)+'→'+Math.round(w.dmg)+' ('+statDiff(Math.round(w.dmg),Math.round(now.dmg))+')  ·  БРОНЯ: HP '+now.hp+'→'+a.hp+' ('+statDiff(a.hp,now.hp)+')  ·  Дальность '+now.range,640,479,13,'#d5edff','center');
+ label('СЕЙЧАС: HP '+now.hp+' · Урон '+Math.round(now.dmg)+' · Дальность '+now.range+' · Регенерация '+now.regen+' HP/с',640,479,14,'#d5edff','center');
  button(447,495,386,42,'▶ НАЧАТЬ ОБОРОНУ','#259269');
 }
 
+function drawInventory(){
+ if(!inventoryOpen||mode!=='lobby')return;
+ ctx.fillStyle='#061321f1';ctx.fillRect(0,0,W,H);
+ rr(86,49,1108,632,20,'#17334a','#7bafc2',3);
+ label('🎒 СНАРЯЖЕНИЕ · '+HERO_DEFS[lobbyHero].name,120,85,26,'#ffefb5');
+ label('Серое  ·  зелёное  ·  синее  ·  фиолетовое  ·  оранжевое',120,119,14,'#c7dcea');
+ button(1035,61,130,48,'✕ ЗАКРЫТЬ','#586476',true,15);
+ label('ЭКИПИРОВАНО',140,151,19,'#e6f8ff');
+ label('РЮКЗАК · '+profile.inventory.length+' предметов',604,151,19,'#e6f8ff');
+ for(let slot=0;slot<6;slot++){
+  const x=136+(slot%2)*219,y=170+Math.floor(slot/2)*109,id=profile.equipment[lobbyHero][slot],item=itemById(id);
+  rr(x,y,207,99,11,'#1f3e51',item?RARITIES[item.rarity].color:'#54748a',item?3:1.7);
+  label(SLOT_ICONS[slot]+' '+SLOT_NAMES[slot],x+12,y+23,15,'#e9f3fb');
+  if(item){label(RARITIES[item.rarity].name,x+12,y+51,16,RARITIES[item.rarity].color);
+   label('НАДЕТО · нажми',x+12,y+78,13,'#d0f4dd');}
+  else label('Пустой слот',x+12,y+61,14,'#88aab8');
+ }
+ const start=inventoryPage*16;
+ for(let i=0;i<16;i++){
+  const x=596+(i%4)*142,y=168+Math.floor(i/4)*96,item=profile.inventory[start+i];
+  rr(x,y,132,86,10,'#223d51',item?RARITIES[item.rarity].color:'#3c5267',item?3:1);
+  if(!item)continue;
+  const owner=itemOwner(item.id),active=item.id===selectedItemId;
+  if(active)rr(x+3,y+3,126,80,8,'#e1fffd13','#ffffff',2);
+  label(SLOT_ICONS[item.slot],x+23,y+32,23,RARITIES[item.rarity].color,'center');
+  label(SLOT_NAMES[item.slot],x+45,y+25,13,'#e8f5ff');
+  label(RARITIES[item.rarity].name,x+45,y+47,12,RARITIES[item.rarity].color);
+  if(owner>=0)label(owner===lobbyHero?'НАДЕТО':'У '+HERO_DEFS[owner].name,x+8,y+71,12,'#e4f3b1');
+ }
+ button(800,564,115,35,'◀ НАЗАД','#315c74',inventoryPage>0,13);
+ button(930,564,115,35,'ДАЛЕЕ ▶','#315c74',(inventoryPage+1)*16<profile.inventory.length,13);
+ label('Страница '+(inventoryPage+1)+' / '+Math.max(1,Math.ceil(profile.inventory.length/16)),677,582,13,'#b5d9e7');
+ const it=itemById(selectedItemId);
+ rr(119,602,1037,62,10,'#19384d','#5a8f9f',1.7);
+ if(it){
+  const before=heroStats(lobbyHero),loadout=profile.equipment[lobbyHero].slice(),owner=itemOwner(it.id);
+  loadout[it.slot]=owner===lobbyHero?null:it.id;
+  const after=heroStatsAt(lobbyHero,profile.levels[lobbyHero],loadout);
+  label(gearName(it)+' · '+RARITIES[it.rarity].name,139,620,17,RARITIES[it.rarity].color);
+  label('HP '+before.hp+'→'+after.hp+' · Урон '+Math.round(before.dmg)+'→'+Math.round(after.dmg)+' · Дал. '+before.range+'→'+after.range,139,641,12,'#cfecef');
+  label('КД '+before.rate.toFixed(2)+'→'+after.rate.toFixed(2)+'с · Скор. '+Math.round(before.move)+'→'+Math.round(after.move)+' · Лечение '+before.regen+'→'+after.regen+'/с',139,657,12,'#cfecef');
+  button(910,613,228,43,owner===lobbyHero?'СНЯТЬ':'НАДЕТЬ',owner===lobbyHero?'#745477':'#2d936b',true,18);
+ }else{
+  label('Выбери предмет в рюкзаке или нажми на занятый слот, чтобы сравнить характеристики.',139,631,16,'#bad5df');
+ }
+}
 function drawEnd(){if(mode!=='lost'&&mode!=='won')return;ctx.fillStyle='#06172bbd';ctx.fillRect(0,TOP,W,GROUND_BOTTOM-TOP);rr(410,172,460,303,22,'#1c3c58','#abddda',3);label(mode==='won'?'ПОБЕДА!':'ОБОРОНА ПРОРВАНА',640,219,31,mode==='won'?'#ffdc80':'#ffae9c','center');label('Волн пройдено: '+(mode==='won'?WAVES:Math.max(0,wave-1)),640,283,22,'#eaffff','center');label('Уничтожено врагов: '+totalKills,640,320,20,'#a9dbe5','center');label('За прохождение получишь жетоны развития героя',640,354,17,'#d1dfbd','center');button(500,394,280,59,'↻ НАЧАТЬ ЗАНОВО','#2a9676');}
 function drawDraggedTower(){
  if(!drag||!drag.moved)return;const p=drag.now;
  if(hoverPad>=0){const pad=pads[hoverPad];circle(pad.x,pad.y,48,'#b8ffaa40','#d5ffc0',4);}
  ctx.save();ctx.globalAlpha=.85;ctx.shadowBlur=16;ctx.shadowColor='#a6efff';towerIcon(p.x,p.y-25,drag.type,1.45);ctx.restore();
 }
-function draw(){ctx.clearRect(0,0,W,H);ctx.fillStyle='#12273c';ctx.fillRect(0,0,W,TOP);if(!backgroundRendered){const old=ctx;ctx=terrainCache.getContext('2d');terrain();ctx=old;backgroundRendered=true;}ctx.drawImage(terrainCache,0,0);for(const pad of pads)if(!pad.tower)platform(pad.x,pad.y,true);for(const pad of pads)if(pad.tower)turret(pad);drawHeroGuides();drawDraggedTower();renderBolts();for(const e of enemies)renderEnemy(e);renderUnits();particlesDraw();if(mode==='lobby'){rr(0,550,1280,170,0,'#122a3d','#6ea5b8',2);label('OVERLOAD DEFENSE   /   КОМАНДНЫЙ ЦЕНТР',640,602,30,'#fff0b7','center');label('Герои, развитие и экипировка · Без рекламы и таймеров энергии',640,659,20,'#b8dfe4','center');drawLobby();}else{drawHUD();drawBottom();drawWaveCards();drawEnd();}if(mode==='lobby'&&!paused)button(1172,7,90,45,'Ⅱ','#214765');if(paused){ctx.fillStyle='#06172cdd';ctx.fillRect(0,0,1280,720);rr(475,177,330,205,18,'#1d4058','#a0ddee',3);label('ПАУЗА',640,229,38,'#f2ffff','center');button(524,285,232,62,'▶ ПРОДОЛЖИТЬ','#218b6c',true,21);button(1172,7,90,45,'▶','#214765');}}
+function draw(){ctx.clearRect(0,0,W,H);ctx.fillStyle='#12273c';ctx.fillRect(0,0,W,TOP);if(!backgroundRendered){const old=ctx;ctx=terrainCache.getContext('2d');terrain();ctx=old;backgroundRendered=true;}ctx.drawImage(terrainCache,0,0);for(const pad of pads)if(!pad.tower)platform(pad.x,pad.y,true);for(const pad of pads)if(pad.tower)turret(pad);drawHeroGuides();drawDraggedTower();renderBolts();for(const e of enemies)renderEnemy(e);renderUnits();particlesDraw();if(mode==='lobby'){rr(0,550,1280,170,0,'#122a3d','#6ea5b8',2);label('OVERLOAD DEFENSE   /   КОМАНДНЫЙ ЦЕНТР',640,602,30,'#fff0b7','center');label('Герои, развитие и экипировка · Без рекламы и таймеров энергии',640,659,20,'#b8dfe4','center');drawLobby();drawInventory();}else{drawHUD();drawBottom();drawWaveCards();drawEnd();}if(mode==='lobby'&&!paused)button(1172,7,90,45,'Ⅱ','#214765');if(paused){ctx.fillStyle='#06172cdd';ctx.fillRect(0,0,1280,720);rr(475,177,330,205,18,'#1d4058','#a0ddee',3);label('ПАУЗА',640,229,38,'#f2ffff','center');button(524,285,232,62,'▶ ПРОДОЛЖИТЬ','#218b6c',true,21);button(1172,7,90,45,'▶','#214765');}}
 function hit(p,x,y,w,h){return p.x>=x&&p.x<=x+w&&p.y>=y&&p.y<=y+h;}
 function click(p){
  // Universal pause/resume for every screen; while paused nothing else is interactive.
  if(hit(p,1172,7,90,45)){paused=!paused;heroDrag=null;drag=null;hoverPad=-1;return;}
  if(paused){if(hit(p,524,285,232,62))paused=false;return;}
- if(mode==='lobby'){if(hit(p,246,179,367,194)){lobbyHero=0;return;}if(hit(p,642,179,367,194)){lobbyHero=1;return;}if(hit(p,250,388,239,49)){levelHero();return;}if(hit(p,498,388,259,49)){equipHero('weapon');return;}if(hit(p,767,388,268,49)){equipHero('armor');return;}if(hit(p,447,495,386,42)){startCampaign();return;}return;}
+ if(inventoryOpen){
+  if(hit(p,1035,61,130,48)){inventoryOpen=false;selectedItemId=null;return;}
+  if(hit(p,800,564,115,35)){inventoryPage=Math.max(0,inventoryPage-1);selectedItemId=null;return;}
+  if(hit(p,930,564,115,35)){inventoryPage=Math.min(Math.max(0,Math.ceil(profile.inventory.length/16)-1),inventoryPage+1);selectedItemId=null;return;}
+  for(let slot=0;slot<6;slot++){
+   const x=136+(slot%2)*219,y=170+Math.floor(slot/2)*109;
+   if(hit(p,x,y,207,99)){selectedItemId=profile.equipment[lobbyHero][slot];return;}
+  }
+  for(let i=0;i<16;i++){
+   const x=596+(i%4)*142,y=168+Math.floor(i/4)*96;
+   if(hit(p,x,y,132,86)){selectedItemId=profile.inventory[inventoryPage*16+i]?.id||null;return;}
+  }
+  if(selectedItemId!==null&&hit(p,910,613,228,43)){equipSelectedItem();return;}
+  return;
+ }
+ if(mode==='lobby'){if(hit(p,246,179,367,194)){lobbyHero=0;return;}if(hit(p,642,179,367,194)){lobbyHero=1;return;}if(hit(p,250,388,239,49)){levelHero();return;}if(hit(p,498,388,537,49)){openInventory();return;}if(hit(p,447,495,386,42)){startCampaign();return;}return;}
  if(hit(p,1072,7,89,45)){if(wave===1&&mode==='battle'){say('Ускорение откроется после обучения');return;}speed=speed===1?2:1;return;}
  if(hero&&hit(p,760,6,296,48)){if(heroFocused){heroFocused=false;heroHoverRoad=null;}else focusHero();return;}
  if(mode==='won'||mode==='lost'){
@@ -777,7 +907,7 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
 let running=true;function frame(now){if(!running)return;let dt=Math.min((now-last)/1000,.06);last=now;update(dt*speed);draw();requestAnimationFrame(frame);}
 addEventListener('visibilitychange',()=>{if(document.hidden)paused=true;});
 // Small development-only API for deterministic smoke tests, harmless in released prototype.
-window.OverloadDefenseTest={state:()=>({wave,mode,paused,heroFocused,heroHoverRoad:heroHoverRoad?{x:heroHoverRoad.x,y:heroHoverRoad.y}:null,lobbyHero,life,money,selected,enemyCount:enemies.length,enemies:enemies.map(e=>({d:e.d,hp:e.hp,blockedByHero:e.blockedByHero||false})),towerCount:pads.filter(x=>x.tower).length,kills:totalKills,clock,towers:pads.map(p=>p.tower?{type:p.tower.type,level:p.tower.level,spec:p.tower.spec,costToUpgrade:upgradeCost(p.tower),investment:towerInvestment(p.tower)}:null),spawnCount:spawn.length,enemySpeeds:enemies.map(e=>e.v),hero:hero?{index:hero.index,d:hero.d,targetD:hero.targetD,hp:hero.hp,dead:hero.dead,deployed:hero.deployed,skillAt:hero.skillAt,range:heroStats(hero.index).range}:null,guards:guards.map(g=>({pad:g.pad,index:g.index,d:g.d,hp:g.hp,dead:g.dead})),profile:JSON.parse(JSON.stringify(profile)),drag:drag?{type:drag.type,moved:drag.moved}:null}),chooseWave,reset,startCampaign,setLobbyHero:i=>lobbyHero=i,levelHero,equipHero,heroSkill,commandHero,placeRally:(pad,point)=>configureRally(pads[pad],point),step:(dt)=>update(dt),buildTower:(type,pad)=>{buildType=type;build(pad);},selectPad:(pad)=>{selected=pad;},upgrade,specialize,overload,roadLength:()=>length,upgradeCostFor:(type,level)=>upgradeCost({type,level}),MAX_TOWER_LEVEL,statsFor:(type,level,spec)=>stats({type,level,spec,overEnd:0,heatEnd:0,readyAt:0}),heroStatsAt,heroStats,heroNextStats,towerUpgradePreview,specPreview,heroBlockStops:heroStopsEnemy};
+window.OverloadDefenseTest={state:()=>({wave,mode,paused,heroFocused,heroHoverRoad:heroHoverRoad?{x:heroHoverRoad.x,y:heroHoverRoad.y}:null,lobbyHero,life,money,selected,enemyCount:enemies.length,enemies:enemies.map(e=>({d:e.d,hp:e.hp,blockedByHero:e.blockedByHero||false})),towerCount:pads.filter(x=>x.tower).length,kills:totalKills,clock,towers:pads.map(p=>p.tower?{type:p.tower.type,level:p.tower.level,spec:p.tower.spec,costToUpgrade:upgradeCost(p.tower),investment:towerInvestment(p.tower)}:null),spawnCount:spawn.length,enemySpeeds:enemies.map(e=>e.v),hero:hero?{index:hero.index,d:hero.d,targetD:hero.targetD,hp:hero.hp,dead:hero.dead,deployed:hero.deployed,skillAt:hero.skillAt,range:heroStats(hero.index).range}:null,guards:guards.map(g=>({pad:g.pad,index:g.index,d:g.d,hp:g.hp,dead:g.dead})),profile:JSON.parse(JSON.stringify(profile)),inventoryOpen,selectedItemId,lastLoot:lastLoot?{...lastLoot}:null,drag:drag?{type:drag.type,moved:drag.moved}:null}),chooseWave,reset,startCampaign,setLobbyHero:i=>lobbyHero=i,levelHero,heroSkill,commandHero,placeRally:(pad,point)=>configureRally(pads[pad],point),step:(dt)=>update(dt),buildTower:(type,pad)=>{buildType=type;build(pad);},selectPad:(pad)=>{selected=pad;},upgrade,specialize,overload,roadLength:()=>length,upgradeCostFor:(type,level)=>upgradeCost({type,level}),MAX_TOWER_LEVEL,statsFor:(type,level,spec)=>stats({type,level,spec,overEnd:0,heatEnd:0,readyAt:0}),heroStatsAt,heroStats,heroNextStats,towerUpgradePreview,specPreview,heroBlockStops:heroStopsEnemy,openInventory,equipSelectedItem,itemById,itemOwner,makeGear,grantLoot,rollRarity,gearName,heroStats,profile:()=>JSON.parse(JSON.stringify(profile)),chooseItem:(id)=>selectedItemId=id,setInventoryPage:(i)=>inventoryPage=i};
 reset();mode='lobby';requestAnimationFrame(frame);
 })();
 
