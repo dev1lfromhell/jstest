@@ -1,3 +1,11 @@
+> **СТАТУС: ПРОЕКТ ЗАКРЫТ / РАЗРАБОТКА ОСТАНОВЛЕНА (6 ноября 2026 года).**
+>
+> Решение владельца проекта: Overload Defense не вызывает достаточного интереса, поэтому работа над ним прекращена. Запланированная v0.7, дальнейшая монетизация и развитие боевой системы отменены. Существующие прототипы и идеи оставлены в репозитории **только как архив**; никакие файлы проекта не удалялись.
+>
+> Последний опубликованный игровой прототип — **v0.6** (`v06.html`, `index.html`). Информация ниже сохранена как исторические заметки к v0.3, а не описание актуальной версии.
+
+---
+
 # Overload Defense — v0.3
 
 Playable, original HTML5 Canvas tower-defense prototype. Landscape screen, 12 build pads, 4 tower types, 10 waves, player-selected standard/risky waves, specialization paths, overdrive indicators, drag-and-drop building.
